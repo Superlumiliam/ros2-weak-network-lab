@@ -1,0 +1,3 @@
+uint64 sequence
+builtin_interfaces/Time send_time
+string payload
