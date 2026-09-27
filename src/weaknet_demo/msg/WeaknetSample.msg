@@ -1,3 +1,4 @@
 uint64 sequence
 builtin_interfaces/Time send_time
+int64 steady_send_time_ns
 string payload

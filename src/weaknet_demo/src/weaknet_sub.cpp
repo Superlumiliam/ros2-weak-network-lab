@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
-#include"rclcpp/rclcpp.hpp"
+#include <chrono>
+#include <string>
+
+#include "rclcpp/rclcpp.hpp"
 #include "weaknet_demo/msg/weaknet_sample.hpp"
 
 struct SubscriberStats
@@ -28,8 +31,39 @@ int main(int argc, char * argv[])
 
     auto stats = std::make_shared<SubscriberStats>();
     auto node = std::make_shared<rclcpp::Node>("weaknet_sub");
+
+    const auto reliability =
+      node->declare_parameter<std::string>("reliability", "reliable");
+    const auto depth =
+      node->declare_parameter<std::int64_t>("depth", 10);
+
+    if (depth <= 0) {
+      RCLCPP_FATAL(node->get_logger(), "depth must be greater than zero");
+      rclcpp::shutdown();
+      return 1;
+    }
+
+    rclcpp::QoS qos(rclcpp::KeepLast(static_cast<std::size_t>(depth)));
+    if (reliability == "reliable") {
+      qos.reliable();
+    } else if (reliability == "best_effort") {
+      qos.best_effort();
+    } else {
+      RCLCPP_FATAL(
+        node->get_logger(),
+        "Unsupported reliability '%s'; use 'reliable' or 'best_effort'",
+        reliability.c_str());
+      rclcpp::shutdown();
+      return 1;
+    }
+
+    RCLCPP_INFO(
+      node->get_logger(),
+      "subscriber QoS: reliability=%s history=KEEP_LAST depth=%lld",
+      reliability.c_str(), static_cast<long long>(depth));
+
     auto subscription = node->create_subscription<weaknet_demo::msg::WeaknetSample>(
-        "/weaknet/sample", 10,
+        "/weaknet/sample", qos,
          [node, stats](const weaknet_demo::msg::WeaknetSample::SharedPtr message)
         {
             if (stats->have_last && 
@@ -43,9 +77,20 @@ int main(int argc, char * argv[])
             stats->received++;
 
             const auto receive_time = node->get_clock()->now();
-            const rclcpp::Time send_time(message->send_time);
+            // const rclcpp::Time send_time(message->send_time);
+            // const double delay_ms =
+            // (receive_time - send_time).seconds() * 1000.0;
+            const auto receive_steady_now =
+            std::chrono::steady_clock::now().time_since_epoch();
+
+            const auto receive_steady_ns =
+              std::chrono::duration_cast<std::chrono::nanoseconds>(
+                receive_steady_now).count();
+
             const double delay_ms =
-            (receive_time - send_time).seconds() * 1000.0;
+              static_cast<double>(
+                receive_steady_ns - message->steady_send_time_ns) / 1e6;
+
 
             stats->delay_samples_ms.push_back(delay_ms);
             stats->sum_delay_squared_ms += delay_ms * delay_ms;
