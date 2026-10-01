@@ -1,0 +1,3 @@
+Starting weaknet_pub with reliability=reliable depth=10
+[INFO] [1790848475.350805395] [weaknet_pub]: publisher QoS: reliability=reliable history=KEEP_LAST depth=10
+[INFO] [1790848505.127212154] [rclcpp]: signal_handler(SIGINT/SIGTERM)

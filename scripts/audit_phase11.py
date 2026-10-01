@@ -13,6 +13,11 @@ def read_analysis(path):
     return values
 
 
+def resolve_artifact(manifest_path, value):
+    path = Path(value)
+    return path if path.is_absolute() else manifest_path.parent / path
+
+
 def audit(manifest_path):
     errors = []
     rows = list(csv.DictReader(manifest_path.open(newline="")))
@@ -25,7 +30,7 @@ def audit(manifest_path):
         seen_run_ids.add(run_id)
 
         paths = {
-            name: Path(row[name])
+            name: resolve_artifact(manifest_path, row[name])
             for name in (
                 "raw_csv",
                 "subscriber_log",

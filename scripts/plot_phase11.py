@@ -23,6 +23,11 @@ def read_key_value_file(path):
     return values
 
 
+def resolve_artifact(manifest_path, value):
+    path = Path(value)
+    return path if path.is_absolute() else manifest_path.parent / path
+
+
 def load_runs(manifest_path):
     runs = []
     with manifest_path.open(newline="") as manifest_file:
@@ -30,8 +35,12 @@ def load_runs(manifest_path):
             if manifest_row["status"] != "valid":
                 continue
 
-            analysis = read_key_value_file(Path(manifest_row["analysis_log"]))
-            with Path(manifest_row["raw_csv"]).open(newline="") as raw_file:
+            analysis_path = resolve_artifact(
+                manifest_path, manifest_row["analysis_log"]
+            )
+            raw_path = resolve_artifact(manifest_path, manifest_row["raw_csv"])
+            analysis = read_key_value_file(analysis_path)
+            with raw_path.open(newline="") as raw_file:
                 raw_rows = list(csv.DictReader(raw_file))
 
             latencies = np.array(
@@ -68,7 +77,9 @@ def write_summary(runs, output_path):
     ]
 
     with output_path.open("w", newline="") as summary_file:
-        writer = csv.DictWriter(summary_file, fieldnames=fields)
+        writer = csv.DictWriter(
+            summary_file, fieldnames=fields, lineterminator="\n"
+        )
         writer.writeheader()
         for run in runs:
             analysis = run["analysis"]

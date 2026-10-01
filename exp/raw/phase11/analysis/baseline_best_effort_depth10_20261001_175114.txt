@@ -1,0 +1,13 @@
+file=/home/liam/ros2exp_ws/exp/raw/phase11/baseline_best_effort_depth10_20261001_175114.csv
+received=595
+first_sequence=0
+last_sequence=594
+inferred_lost=0
+out_of_order=0
+avg_latency_ms=0.590785
+p95_latency_ms=1.329365
+min_latency_ms=0.103270
+max_latency_ms=1.793398
+latency_jitter_stddev_ms=0.324346
+duration_s=29.690498
+receive_rate_hz=20.006401

@@ -1,6 +1,6 @@
 # 当前实验结果摘要
 
-这是当前仓库可以公开引用的阶段性结果摘要。完整 raw CSV、节点日志和图表位于本地的 `exp/`，该目录被 `.gitignore` 忽略，其他开发者需要按 README 重新运行实验生成自己的数据。
+这是当前仓库可以公开引用的阶段性结果摘要。Phase 11 的一套有效 raw CSV、节点日志、manifest 和图表已经随仓库提交到 `exp/raw/phase11/` 与 `exp/plots/`；其他实验轮次和本地临时结果仍由 `.gitignore` 忽略。其他开发者可以直接复核这套参考数据，也可以按 README 重新运行实验生成自己的数据。
 
 ## 实验边界
 
@@ -71,4 +71,4 @@ python3 scripts/plot_phase11.py \
   exp/raw/phase11/manifest.csv --output-dir exp/plots
 ```
 
-原始结论和异常历史仍保存在实验者本机的 `exp/conclusions.md` 与 `exp/anomalies.md`。提交新的结果时，请保留实验条件、run id 和异常说明，不要只提交一张经过筛选的漂亮图。
+原始结论和异常历史仍保存在实验者本机的 `exp/conclusions.md` 与 `exp/anomalies.md`，因为它们包含本地实验过程记录。提交新的结果时，请保留实验条件、run id 和异常说明，不要只提交一张经过筛选的漂亮图。

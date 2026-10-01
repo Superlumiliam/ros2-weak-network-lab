@@ -1,0 +1,13 @@
+file=/home/liam/ros2exp_ws/exp/raw/phase11/delay100_best_effort_depth10_20261001_175114.csv
+received=593
+first_sequence=3
+last_sequence=595
+inferred_lost=0
+out_of_order=0
+avg_latency_ms=100.282718
+p95_latency_ms=100.546686
+min_latency_ms=100.128000
+max_latency_ms=100.981776
+latency_jitter_stddev_ms=0.127364
+duration_s=29.535596
+receive_rate_hz=20.043611

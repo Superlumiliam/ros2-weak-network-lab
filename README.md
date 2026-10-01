@@ -216,7 +216,9 @@ sudo ip netns exec weaknet_pub_ns tc qdisc show dev wnpub0
     └── package.xml
 ```
 
-`build/`、`install/`、`log/` 是 colcon 生成目录，不应提交。`exp/` 保存本机 raw CSV、日志和图表，也被 `.gitignore` 忽略；这样可以避免把与机器、时间和运行次数绑定的结果误当成通用基准。可公开复核的阶段结论放在 `docs/experiment_results.md`，复现实验后再在本地生成完整 `/exp`。
+`build/`、`install/`、`log/` 是 colcon 生成目录，不应提交。`exp/` 默认保存本机 raw CSV、日志和图表；其中只有经过审计的 `exp/raw/phase11/` 和 `exp/plots/` 参考结果被显式纳入版本控制，其余本地实验仍被 `.gitignore` 忽略。这样既提供了可下载的参考数据，又避免把所有机器相关的实验产物混入仓库。稳定的阶段结论放在 `docs/experiment_results.md`。
+
+已提交的参考数据说明见 [exp/raw/phase11/README.md](exp/raw/phase11/README.md)。clone 后可以直接用仓库内的相对路径 manifest 运行审计和绘图。
 
 ## Agent 协作方式
 

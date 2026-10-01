@@ -1,0 +1,13 @@
+file=/home/liam/ros2exp_ws/exp/raw/phase11/loss20_reliable_depth10_20261001_175114.csv
+received=577
+first_sequence=10
+last_sequence=593
+inferred_lost=7
+out_of_order=0
+avg_latency_ms=141.972833
+p95_latency_ms=413.073495
+min_latency_ms=0.120259
+max_latency_ms=463.361777
+latency_jitter_stddev_ms=146.389325
+duration_s=28.749132
+receive_rate_hz=20.035388

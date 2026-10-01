@@ -1,0 +1,13 @@
+file=/home/liam/ros2exp_ws/exp/raw/phase11/outage_reliable_depth1_20261001_175114.csv
+received=395
+first_sequence=0
+last_sequence=595
+inferred_lost=201
+out_of_order=0
+avg_latency_ms=0.477047
+p95_latency_ms=0.810567
+min_latency_ms=0.134791
+max_latency_ms=0.976579
+latency_jitter_stddev_ms=0.196011
+duration_s=29.734680
+receive_rate_hz=13.250521

@@ -167,7 +167,8 @@ apply_qdisc() {
 save_tc_stats() {
   local tc_log="$1"
   sudo -n ip netns exec "$NAMESPACE" \
-    tc -s qdisc show dev "$INTERFACE" > "$tc_log" 2>&1 || true
+    tc -s qdisc show dev "$INTERFACE" 2>&1 |
+    sed 's/[[:space:]]*$//' > "$tc_log" || true
 }
 
 verify_clean_qdisc() {
@@ -196,11 +197,16 @@ append_manifest() {
   local tc_log="$8"
   local analysis_log="$9"
   local status="${10}"
+  local raw_csv_rel="${raw_csv#"$RAW_DIR/"}"
+  local subscriber_log_rel="${subscriber_log#"$RAW_DIR/"}"
+  local publisher_log_rel="${publisher_log#"$RAW_DIR/"}"
+  local tc_log_rel="${tc_log#"$RAW_DIR/"}"
+  local analysis_log_rel="${analysis_log#"$RAW_DIR/"}"
 
   printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$run_id" "$reliability" "$depth" "$condition" \
-    "$raw_csv" "$subscriber_log" "$publisher_log" "$tc_log" \
-    "$analysis_log" "$status" >> "$MANIFEST"
+    "$raw_csv_rel" "$subscriber_log_rel" "$publisher_log_rel" "$tc_log_rel" \
+    "$analysis_log_rel" "$status" >> "$MANIFEST"
 }
 
 run_nodes() {
