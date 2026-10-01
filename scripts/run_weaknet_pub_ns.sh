@@ -3,8 +3,10 @@
 set -euo pipefail
 
 NAMESPACE="weaknet_pub_ns"
-ROS_SETUP="/opt/ros/humble/setup.bash"
-WORKSPACE_SETUP="/home/liam/ros2exp_ws/install/setup.bash"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+ROS_SETUP="${ROS_SETUP:-/opt/ros/${ROS_DISTRO:-humble}/setup.bash}"
+WORKSPACE_SETUP="$WORKSPACE/install/setup.bash"
 RUN_USER="${SUDO_USER:-${USER}}"
 RELIABILITY="${1:-reliable}"
 DEPTH="${2:-10}"
@@ -26,6 +28,17 @@ fi
 if ! sudo ip netns exec "$NAMESPACE" true 2>/dev/null; then
   echo "Error: namespace '$NAMESPACE' does not exist." >&2
   echo "Run setup_weaknet_netns.sh up first." >&2
+  exit 1
+fi
+
+if [[ ! -f "$ROS_SETUP" ]]; then
+  echo "Error: ROS setup file not found: $ROS_SETUP" >&2
+  exit 1
+fi
+
+if [[ ! -f "$WORKSPACE_SETUP" ]]; then
+  echo "Error: workspace setup file not found: $WORKSPACE_SETUP" >&2
+  echo "Build the workspace first: colcon build --packages-select weaknet_demo" >&2
   exit 1
 fi
 

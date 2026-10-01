@@ -46,18 +46,16 @@ int main(int argc, char * argv[])
     auto sequence = std::make_shared<std::uint64_t>(0);
     auto timer = node->create_wall_timer(
         std::chrono::milliseconds(50),
-        [publisher,node,sequence](){
+        [publisher, node, sequence]() {
             weaknet_demo::msg::WeaknetSample message;
             message.sequence = (*sequence)++;
             message.send_time = node->get_clock()->now();
             const auto steady_now = std::chrono::steady_clock::now().time_since_epoch();
             message.steady_send_time_ns =
-                std::chrono::duration_cast<std::chrono::nanoseconds>(
-                steady_now).count();
+                std::chrono::duration_cast<std::chrono::nanoseconds>(steady_now).count();
             message.payload = "hello from weaknet_pub";
             publisher->publish(message);
-        }
-    );
+        });
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;

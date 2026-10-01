@@ -8,15 +8,14 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
-find_package(builtin_interfaces REQUIRED) 
+find_package(builtin_interfaces REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
 add_executable(weaknet_pub src/weaknet_pub.cpp)
-ament_target_dependencies(weaknet_pub rclcpp std_msgs)
+ament_target_dependencies(weaknet_pub rclcpp)
 
 install(TARGETS
   weaknet_pub
@@ -24,24 +23,24 @@ install(TARGETS
 )
 
 add_executable(weaknet_sub src/weaknet_sub.cpp)
-ament_target_dependencies(weaknet_sub rclcpp std_msgs)
+ament_target_dependencies(weaknet_sub rclcpp)
 
 install(TARGETS
-    weaknet_sub
-    DESTINATION lib/${PROJECT_NAME}
-  )
+  weaknet_sub
+  DESTINATION lib/${PROJECT_NAME}
+)
 rosidl_generate_interfaces(${PROJECT_NAME}
-    "msg/WeaknetSample.msg"
-    DEPENDENCIES builtin_interfaces
-  )
+  "msg/WeaknetSample.msg"
+  DEPENDENCIES builtin_interfaces
+)
 ament_export_dependencies(rosidl_default_runtime)
 rosidl_get_typesupport_target(cpp_typesupport_target
-    ${PROJECT_NAME} "rosidl_typesupport_cpp")
+  ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(weaknet_pub
-    "${cpp_typesupport_target}")
+  "${cpp_typesupport_target}")
 
 target_link_libraries(weaknet_sub
-    "${cpp_typesupport_target}")    
+  "${cpp_typesupport_target}")
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

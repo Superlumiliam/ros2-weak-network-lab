@@ -1,10 +1,12 @@
-#include<memory>
-#include <cstdint>
 #include <algorithm>
-#include <cmath>
-#include <vector>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <fstream>
+#include <iomanip>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "weaknet_demo/msg/weaknet_sample.hpp"
@@ -33,14 +35,32 @@ int main(int argc, char * argv[])
     auto node = std::make_shared<rclcpp::Node>("weaknet_sub");
 
     const auto reliability =
-      node->declare_parameter<std::string>("reliability", "reliable");
-    const auto depth =
-      node->declare_parameter<std::int64_t>("depth", 10);
+        node->declare_parameter<std::string>("reliability", "reliable");
+    const auto depth = node->declare_parameter<std::int64_t>("depth", 10);
+    const auto csv_path = node->declare_parameter<std::string>("csv_path", "");
 
     if (depth <= 0) {
-      RCLCPP_FATAL(node->get_logger(), "depth must be greater than zero");
-      rclcpp::shutdown();
-      return 1;
+        RCLCPP_FATAL(node->get_logger(), "depth must be greater than zero");
+        rclcpp::shutdown();
+        return 1;
+    }
+
+    auto csv_file = std::make_shared<std::ofstream>();
+    if (!csv_path.empty()) {
+        csv_file->open(csv_path, std::ios::out | std::ios::trunc);
+        if (!csv_file->is_open()) {
+            RCLCPP_FATAL(
+                node->get_logger(),
+                "Could not open CSV file '%s'",
+                csv_path.c_str());
+            rclcpp::shutdown();
+            return 1;
+        }
+
+        *csv_file
+            << "sequence,send_time_sec,send_time_nanosec,"
+            << "receive_time_sec,receive_time_nanosec,"
+            << "send_steady_ns,receive_steady_ns,latency_ms\n";
     }
 
     rclcpp::QoS qos(rclcpp::KeepLast(static_cast<std::size_t>(depth)));
@@ -49,27 +69,25 @@ int main(int argc, char * argv[])
     } else if (reliability == "best_effort") {
       qos.best_effort();
     } else {
-      RCLCPP_FATAL(
-        node->get_logger(),
-        "Unsupported reliability '%s'; use 'reliable' or 'best_effort'",
-        reliability.c_str());
-      rclcpp::shutdown();
-      return 1;
+        RCLCPP_FATAL(
+            node->get_logger(),
+            "Unsupported reliability '%s'; use 'reliable' or 'best_effort'",
+            reliability.c_str());
+        rclcpp::shutdown();
+        return 1;
     }
 
     RCLCPP_INFO(
       node->get_logger(),
-      "subscriber QoS: reliability=%s history=KEEP_LAST depth=%lld",
-      reliability.c_str(), static_cast<long long>(depth));
+      "subscriber QoS: reliability=%s history=KEEP_LAST depth=%lld csv=%s",
+        reliability.c_str(), static_cast<long long>(depth),
+        csv_path.empty() ? "disabled" : csv_path.c_str());
 
     auto subscription = node->create_subscription<weaknet_demo::msg::WeaknetSample>(
         "/weaknet/sample", qos,
-         [node, stats](const weaknet_demo::msg::WeaknetSample::SharedPtr message)
-        {
-            if (stats->have_last && 
-                message->sequence > stats->last_sequence + 1) {
-                stats->inferred_lost +=
-                message->sequence - stats->last_sequence - 1;
+        [node, stats, csv_file](const weaknet_demo::msg::WeaknetSample::SharedPtr message) {
+            if (stats->have_last && message->sequence > stats->last_sequence + 1) {
+                stats->inferred_lost += message->sequence - stats->last_sequence - 1;
             }
 
             stats->last_sequence = message->sequence;
@@ -80,16 +98,30 @@ int main(int argc, char * argv[])
             // const rclcpp::Time send_time(message->send_time);
             // const double delay_ms =
             // (receive_time - send_time).seconds() * 1000.0;
-            const auto receive_steady_now =
-            std::chrono::steady_clock::now().time_since_epoch();
+            const auto receive_steady_now = std::chrono::steady_clock::now().time_since_epoch();
 
             const auto receive_steady_ns =
-              std::chrono::duration_cast<std::chrono::nanoseconds>(
-                receive_steady_now).count();
+                std::chrono::duration_cast<std::chrono::nanoseconds>(receive_steady_now).count();
 
-            const double delay_ms =
-              static_cast<double>(
+            const double delay_ms = static_cast<double>(
                 receive_steady_ns - message->steady_send_time_ns) / 1e6;
+
+            if (csv_file->is_open()) {
+                const auto receive_ros_ns = receive_time.nanoseconds();
+                const auto receive_sec = receive_ros_ns / 1000000000LL;
+                const auto receive_nanosec = receive_ros_ns % 1000000000LL;
+
+                *csv_file
+                    << message->sequence << ','
+                    << message->send_time.sec << ','
+                    << message->send_time.nanosec << ','
+                    << receive_sec << ','
+                    << receive_nanosec << ','
+                    << message->steady_send_time_ns << ','
+                    << receive_steady_ns << ','
+                    << std::fixed << std::setprecision(6) << delay_ms << '\n';
+                csv_file->flush();
+            }
 
 
             stats->delay_samples_ms.push_back(delay_ms);
@@ -103,17 +135,14 @@ int main(int argc, char * argv[])
             stats->last_receive_sec = receive_time.seconds();
 
             stats->sum_delay_ms += delay_ms;
-            if (stats->received == 1) 
-            {
+            if (stats->received == 1) {
                 stats->min_delay_ms = delay_ms;
                 stats->max_delay_ms = delay_ms;
-            } 
-            else 
-            {
+            } else {
                 stats->min_delay_ms =
-                std::min(stats->min_delay_ms, delay_ms);
+                    std::min(stats->min_delay_ms, delay_ms);
                 stats->max_delay_ms =
-                std::max(stats->max_delay_ms, delay_ms);
+                    std::max(stats->max_delay_ms, delay_ms);
             }
             RCLCPP_INFO(
                 node->get_logger(),
@@ -123,10 +152,8 @@ int main(int argc, char * argv[])
                 message->send_time.nanosec,
                 receive_time.seconds(),
                 delay_ms,
-                message->payload.c_str()
-            );
-        }
-    );
+                message->payload.c_str());
+        });
     (void)subscription;
     rclcpp::spin(node);
 
@@ -144,26 +171,25 @@ int main(int argc, char * argv[])
 
     double p95_delay_ms = 0.0;
     double latency_jitter_ms = 0.0;
-    if (!stats->delay_samples_ms.empty()) 
-    {
+    if (!stats->delay_samples_ms.empty()) {
       auto sorted_delays = stats->delay_samples_ms;
       std::sort(sorted_delays.begin(), sorted_delays.end());
 
       const auto p95_index = static_cast<std::size_t>(
-        0.95 * static_cast<double>(sorted_delays.size() - 1));
+          0.95 * static_cast<double>(sorted_delays.size() - 1));
 
       p95_delay_ms = sorted_delays[p95_index];
 
       const double average_delay_ms =
-        stats->sum_delay_ms /
-        static_cast<double>(stats->delay_samples_ms.size());
+          stats->sum_delay_ms /
+          static_cast<double>(stats->delay_samples_ms.size());
 
       const double mean_square =
-        stats->sum_delay_squared_ms /
-        static_cast<double>(stats->delay_samples_ms.size());
+          stats->sum_delay_squared_ms /
+          static_cast<double>(stats->delay_samples_ms.size());
 
       const double variance =
-        std::max(0.0, mean_square - average_delay_ms * average_delay_ms);
+          std::max(0.0, mean_square - average_delay_ms * average_delay_ms);
 
       latency_jitter_ms = std::sqrt(variance);
     }
