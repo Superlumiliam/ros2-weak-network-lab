@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Purpose: Audit the Phase 11 manifest and its raw logs, summaries, and analysis artifacts.
 
 import argparse
 import csv

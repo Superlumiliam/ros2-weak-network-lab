@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Purpose: Create, inspect, or remove the isolated publisher/subscriber veth namespaces.
 
 set -euo pipefail
 

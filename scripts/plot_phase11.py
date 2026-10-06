@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Purpose: Generate Phase 11 reference plots from audited experiment results.
 
 import argparse
 import csv

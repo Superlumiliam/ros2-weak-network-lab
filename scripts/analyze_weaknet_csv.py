@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Purpose: Analyze one weak-network CSV and calculate latency, loss, rate, and jitter metrics.
 
 import argparse
 import csv

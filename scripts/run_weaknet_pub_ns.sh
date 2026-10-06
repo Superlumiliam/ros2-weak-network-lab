@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Purpose: Start weaknet_pub inside the publisher network namespace with the selected QoS.
 
 set -euo pipefail
 

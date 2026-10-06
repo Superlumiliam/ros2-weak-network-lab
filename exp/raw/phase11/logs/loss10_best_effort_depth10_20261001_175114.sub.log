@@ -1,5 +1,5 @@
-Starting weaknet_sub with reliability=best_effort depth=10 csv_path=/home/liam/ros2exp_ws/exp/raw/phase11/loss10_best_effort_depth10_20261001_175114.csv
-[INFO] [1790848635.707479142] [weaknet_sub]: subscriber QoS: reliability=best_effort history=KEEP_LAST depth=10 csv=/home/liam/ros2exp_ws/exp/raw/phase11/loss10_best_effort_depth10_20261001_175114.csv
+Starting weaknet_sub with reliability=best_effort depth=10 csv_path=~/ros2exp_ws/exp/raw/phase11/loss10_best_effort_depth10_20261001_175114.csv
+[INFO] [1790848635.707479142] [weaknet_sub]: subscriber QoS: reliability=best_effort history=KEEP_LAST depth=10 csv=~/ros2exp_ws/exp/raw/phase11/loss10_best_effort_depth10_20261001_175114.csv
 [INFO] [1790848637.783424064] [weaknet_sub]: seq=0 send=1790848637.783201033 recv=1790848637.783364058 delay=0.163 ms payload='hello from weaknet_pub'
 [INFO] [1790848637.833531303] [weaknet_sub]: seq=1 send=1790848637.833317910 recv=1790848637.833478928 delay=0.161 ms payload='hello from weaknet_pub'
 [INFO] [1790848637.884274835] [weaknet_sub]: seq=2 send=1790848637.883608570 recv=1790848637.884147882 delay=0.538 ms payload='hello from weaknet_pub'

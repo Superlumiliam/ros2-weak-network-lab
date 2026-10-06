@@ -9,7 +9,7 @@
 - 100 ms + 10% loss 的 QoS 对照；
 - KEEP_LAST depth=1/5/10 的 10 s 中断恢复实验。
 
-`manifest.csv` 中的路径相对于本目录记录，因此 clone 仓库后不需要修改 `/home/...` 路径。每轮包含：
+`manifest.csv` 中的路径相对于本目录记录，因此 clone 仓库后不需要修改本机绝对路径。每轮包含：
 
 - raw CSV：每一条 subscriber 收到的消息及延迟；
 - `analysis/`：标准库分析脚本生成的 summary；

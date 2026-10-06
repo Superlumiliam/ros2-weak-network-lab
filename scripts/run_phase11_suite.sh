@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Purpose: Run the complete Phase 11 experiment matrix, collect artifacts, and audit results.
 
 set -Eeuo pipefail
 

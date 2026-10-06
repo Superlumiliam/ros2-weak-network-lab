@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>weaknet_tcp_client_transport</transport_id>
+        <type>TCPv4</type>
+        <wan_addr>@WSL_LAN_IP@</wan_addr>
+        <interfaceWhiteList>
+          <address>@WSL_LAN_IP@</address>
+        </interfaceWhiteList>
+        <listening_ports>
+          <port>@DDS_DATA_PORT@</port>
+        </listening_ports>
+      </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="weaknet_tcp_client" is_default_profile="true">
+      <rtps>
+        <builtin>
+          <discovery_config>
+            <discoveryProtocol>@DISCOVERY_PROTOCOL@</discoveryProtocol>
+            <discoveryServersList>
+              <RemoteServer prefix="@SERVER_GUID_PREFIX@">
+                <metatrafficUnicastLocatorList>
+                  <locator>
+                    <tcpv4>
+                      <address>@ROBOT_IP@</address>
+                      <port>@DISCOVERY_SERVER_PORT@</port>
+                      <physical_port>@DISCOVERY_SERVER_PORT@</physical_port>
+                    </tcpv4>
+                  </locator>
+                </metatrafficUnicastLocatorList>
+              </RemoteServer>
+            </discoveryServersList>
+          </discovery_config>
+        </builtin>
+        <useBuiltinTransports>false</useBuiltinTransports>
+        <userTransports>
+          <transport_id>weaknet_tcp_client_transport</transport_id>
+        </userTransports>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

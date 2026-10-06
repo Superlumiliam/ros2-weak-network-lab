@@ -1,4 +1,4 @@
-file=/home/liam/ros2exp_ws/exp/raw/phase11/delay100_reliable_depth10_20261001_175114.csv
+file=~/ros2exp_ws/exp/raw/phase11/delay100_reliable_depth10_20261001_175114.csv
 received=592
 first_sequence=3
 last_sequence=594

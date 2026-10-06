@@ -92,8 +92,24 @@ namespace → veth pair → qdisc → netem → DDS UDP packet
 
 完成标准：manifest 中有效实验全部通过审计，结束时 qdisc 没有残留 netem；绘图脚本只读取 manifest 中标记为 `valid` 的实验。
 
-## Phase 12：真实机器人扩展
+## Phase 12：Jetson Orin Nano 跨主机扩展
 
-计划将实验链路接到真实机器人的 `/cmd_vel` 或其他控制 topic。必须先增加安全设计：硬件急停、速度限制、命令超时自动停止、断网时的 fail-safe、明确的仿真/实机开关。
+本阶段基于 **NVIDIA Jetson Orin Nano**，提供 WSL2 与 Jetson 间的 Fast DDS TCP Discovery Server 配置、底盘 driver 管理，以及 `/cmd_vel` 零速度消息验证。WSL、Windows 防火墙和 Jetson 分别使用 `setup_phase12_wsl.sh`、`setup_phase12_windows.ps1` 和 `setup_phase12_jetson_local.sh`。跨主机配置与排错步骤见 [troubleshooting.md 的 Phase 12 部分](troubleshooting.md#10-phase-12wsl2-与真实机器人跨主机-dds-不通)。
 
-完成标准不应只是“车动起来”，还应能解释延迟、loss、QoS 和 depth 对控制体验和安全性的影响。当前仓库尚未授权或实现真实机器人控制。
+**以下流程仅作参考**：局域网、WSL mirrored networking、防火墙策略、Jetson 系统镜像和厂商 driver 版本都会影响结果。请先按自己的设备核对地址、ROS domain、RMW、driver package 和启动方式。脚本默认只启动通信环境和底盘 driver；`weaknet_cmdvel_pub` 默认发布全零 `Twist`，但可设置非零速度。日志中的 endpoint 匹配不能代替实际数据验证，也不能证明机器人控制安全。
+
+```bash
+# WSL：设置当前可达的 Jetson 地址并加载配置
+export WEAKNET_ROBOT_IP=<JETSON_IP>
+source scripts/setup_phase12_wsl.sh up
+
+# 首次部署时从 WSL 复制脚本到 Jetson
+scp scripts/setup_phase12_jetson_local.sh \
+  <JETSON_USER>@<JETSON_IP>:~/weaknet_phase12_setup.sh
+
+# Jetson SSH 终端：启动或检查底盘 driver 环境
+source ~/weaknet_phase12_setup.sh up
+source ~/weaknet_phase12_setup.sh check
+```
+
+真实控制实验还需独立确认硬件急停、速度限制、命令超时和断网 fail-safe。当前项目未实现或验证这些保护，因此本阶段只覆盖通信配置与零速度消息验证；没有完成非零控制和实机安全验收。

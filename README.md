@@ -6,7 +6,7 @@
 
 > 在弱网环境下，一条已经过期的消息，即使可靠地到达了，是否仍然对机器人有用？
 
-当前阶段已经完成 Phase 0–11，包括逐消息 CSV、自动化实验、结果审计和基础可视化；真实机器人 `/cmd_vel` 实验属于计划中的 Phase 12，尚未在本仓库中实现。
+Phase 0–11 已形成逐消息 CSV、自动化实验、结果审计和基础可视化。Phase 12 提供面向 NVIDIA Jetson Orin Nano 的跨主机 DDS 配置与 `/cmd_vel` 验证脚本；当前实现和命令流程仅作参考，具体网络、驱动和安全条件需按实际设备确认。
 
 ## 实验拓扑
 
@@ -41,7 +41,7 @@ ROS 2 应用通过 `rclcpp` 使用 RMW；RMW 再使用 DDS 实现完成发现和
 | Phase 9 | 比较 Reliable 与 Best Effort | 已完成 |
 | Phase 10 | 比较 KEEP_LAST depth 和中断恢复后的旧消息排空 | 已完成 |
 | Phase 11 | 自动化采集 raw CSV、审计和绘图 | 已完成 |
-| Phase 12 | 接入真实机器人或小车的 `/cmd_vel` | 计划中 |
+| Phase 12 | 配置真实机器人跨主机 DDS 环境并接入 `/cmd_vel` | 环境脚本已完成，控制实验待执行 |
 
 每个 Phase 的教学目标和验收标准见 [docs/phase_guide.md](docs/phase_guide.md)。
 
@@ -77,7 +77,7 @@ source /opt/ros/humble/setup.bash
 `source` 只修改当前 shell 的环境变量；它不会安装 ROS，也不会修改源码。编译本仓库后还需要加载 workspace overlay：
 
 ```bash
-source /home/liam/ros2exp_ws/install/setup.bash
+source ~/ros2exp_ws/install/setup.bash
 ```
 
 ## 快速开始
@@ -118,7 +118,59 @@ source install/setup.bash
 
 两个脚本分别启动节点，故意没有合并成一个脚本，便于观察节点生命周期和单独替换 QoS。可选参数是 `reliable|best_effort` 和正整数 depth。按 `Ctrl-C` 停止节点。
 
-### 4. 保存一次逐消息实验记录
+### 4. 配置 Phase 12 跨主机环境
+
+Phase 12 需要 WSL2 与机器人处于可双向访问的网络中。推荐先按 [docs/troubleshooting.md](docs/troubleshooting.md) 配置 WSL2 mirrored networking 和 Hyper-V firewall，然后在 WSL2 中执行：
+
+```bash
+export WEAKNET_ROBOT_IP=<ROBOT_IP>
+export WEAKNET_ROBOT_USER=<ROBOT_SSH_USER>
+export WEAKNET_ROS_DOMAIN_ID=<ROS_DOMAIN_ID>
+# 可选；默认由到机器人的路由自动检测
+export WEAKNET_WSL_LAN_IP=<WSL_LAN_IP>
+
+# source 会修改当前终端环境，不能改成直接执行 bash 脚本
+source ~/ros2exp_ws/scripts/setup_phase12_wsl.sh up
+
+# 首次配置：打印 Windows 管理员 PowerShell 命令，在 Windows 执行该命令
+source ~/ros2exp_ws/scripts/setup_phase12_wsl.sh firewall
+
+# 一次性把 Jetson 本地 setup 脚本复制过去
+scp ~/ros2exp_ws/scripts/setup_phase12_jetson_local.sh \
+  <ROBOT_SSH_USER>@<ROBOT_IP>:~/weaknet_phase12_setup.sh
+
+# SSH 进入 Jetson；之后重启只需在 Jetson 本机执行这一条
+ssh <ROBOT_SSH_USER>@<ROBOT_IP>
+chmod +x ~/weaknet_phase12_setup.sh
+source ~/weaknet_phase12_setup.sh up
+```
+
+常用检查和停止命令：
+
+```bash
+source ~/ros2exp_ws/scripts/setup_phase12_wsl.sh check
+# 以下命令在 Jetson SSH 终端执行
+source ~/weaknet_phase12_setup.sh check
+source ~/weaknet_phase12_setup.sh down
+```
+
+Jetson 脚本在 Jetson 本机运行，不保存 SSH 密码，也不会向 `/cmd_vel` 发布消息；WSL 脚本只配置 WSL 当前 shell。Jetson setup 只启动或接管 `Mcnamu_driver_M1` 底盘 driver，不再启动厂商的手柄 launch；`joy_node`/`joy_ctrl` 是可选控制端，实验 publisher 应由本仓库的 C++ 节点提供。脚本会拒绝启动第二个 driver，避免重复 `/driver_node`。机器人 workspace、driver package、driver executable 或厂商环境文件不同时，可以通过 `WEAKNET_ROBOT_WORKSPACE`、`WEAKNET_ROBOT_DRIVER_PACKAGE`、`WEAKNET_ROBOT_DRIVER_EXECUTABLE` 和 `WEAKNET_ROBOT_ENV_FILE` 覆盖默认值。WSL `up/check` 会清理当前 domain 的失效 ROS CLI daemon，并让交互式 `ros2` 默认使用 `SUPER_CLIENT` profile；Jetson driver 仍使用普通 `CLIENT` profile。
+
+环境确认后，在 WSL 中先用零速度启动自己的控制 publisher，验证它是否匹配到 Jetson 的 `/driver_node`：
+
+```bash
+source ~/ros2exp_ws/install/setup.bash
+ros2 run weaknet_demo weaknet_cmdvel_pub \
+  --ros-args -p rate_hz:=20.0 -p linear_x:=0.0 -p linear_y:=0.0 -p angular_z:=0.0
+```
+
+所有 ROS 参与者使用独立动态 TCP 端口。Windows setup 仅允许机器人 IP 访问 WSL 当前动态端口范围；普通 `ros2 run/topic pub/echo/list` 使用同一环境，无需专用固定端口 launcher。旧版 `46000` 配置应先清理：`unset WEAKNET_DDS_DATA_PORT WEAKNET_CONTROL_DATA_PORT WEAKNET_CONTROL_PROFILE_PATH`。WSL 重启后动态范围可能改变，需重新检查 `firewall` 输出并更新规则。
+
+保持零速度发布时，在 Jetson 执行 `source ~/weaknet_phase12_setup.sh verify`，只有收到实际 `Twist` 才验收通过。分层排障、配置恢复和已知限制见 [Phase 12 排障说明](docs/troubleshooting.md#10-phase-12wsl2-与真实机器人跨主机-dds-不通)。
+
+日志出现 `matched_subscribers=1` 只表示 DDS endpoint 已匹配，不代表机器人会运动；本节点的默认速度也是全零。实验中不要同时启动厂商 `joy_ctrl` 和本节点，否则两个 publisher 会同时向 `/cmd_vel` 写入控制命令。
+
+### 5. 保存一次逐消息实验记录
 
 subscriber 的第三个参数是 CSV 路径：
 
@@ -134,7 +186,7 @@ python3 ~/ros2exp_ws/scripts/analyze_weaknet_csv.py \
   ~/ros2exp_ws/exp/raw/manual_baseline.csv
 ```
 
-### 5. 清理网络拓扑
+### 6. 清理网络拓扑
 
 实验结束后：
 
@@ -201,6 +253,8 @@ sudo ip netns exec weaknet_pub_ns tc qdisc show dev wnpub0
 │   ├── phase_guide.md
 │   └── troubleshooting.md
 ├── scripts/
+│   ├── setup_phase12_wsl.sh
+│   ├── setup_phase12_jetson_local.sh
 │   ├── setup_weaknet_netns.sh
 │   ├── run_weaknet_pub_ns.sh
 │   ├── run_weaknet_sub_ns.sh
@@ -208,9 +262,12 @@ sudo ip netns exec weaknet_pub_ns tc qdisc show dev wnpub0
 │   ├── analyze_weaknet_csv.py
 │   ├── audit_phase11.py
 │   └── plot_phase11.py
+├── config/phase12/
+│   └── fastdds_tcp_client.xml.in
 └── src/weaknet_demo/
     ├── msg/WeaknetSample.msg
     ├── src/weaknet_pub.cpp
+    ├── src/weaknet_cmdvel_pub.cpp
     ├── src/weaknet_sub.cpp
     ├── CMakeLists.txt
     └── package.xml
@@ -238,7 +295,7 @@ sudo ip netns exec weaknet_pub_ns tc qdisc show dev wnpub0
 - `tc dropped` 统计的是网络包，不是 ROS 2 应用消息；
 - sequence gap 是应用层丢失的推断值，不能替代 DDS 内部传输统计；
 - 单轮实验不能代表普遍规律，改变 CPU 负载、DDS 版本、消息大小或网络拓扑后应重新建立 baseline；
-- Phase 12 接入 `/cmd_vel` 前必须增加安全停止、限速和失联保护，当前仓库不会直接控制真实机器人。
+- Phase 12 面向 NVIDIA Jetson Orin Nano 实现了跨主机配置和 `/cmd_vel` publisher；默认速度为零，但节点可配置非零速度。流程仅作参考，仓库未实现或验证硬件急停、限速、命令超时和断网保护，未经实机安全评估不要发布非零速度。
 
 ## 许可证
 

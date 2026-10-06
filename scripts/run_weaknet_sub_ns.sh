@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Purpose: Start weaknet_sub inside the subscriber network namespace and optionally log CSV data.
 
 set -euo pipefail
 

@@ -8,6 +8,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 # uncomment the following section in order to fill in
@@ -41,6 +42,14 @@ target_link_libraries(weaknet_pub
 
 target_link_libraries(weaknet_sub
   "${cpp_typesupport_target}")
+
+add_executable(weaknet_cmdvel_pub src/weaknet_cmdvel_pub.cpp)
+ament_target_dependencies(weaknet_cmdvel_pub rclcpp geometry_msgs)
+
+install(TARGETS
+  weaknet_cmdvel_pub
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

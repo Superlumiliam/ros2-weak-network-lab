@@ -1,4 +1,4 @@
-file=/home/liam/ros2exp_ws/exp/raw/phase11/delay100_loss10_best_effort_depth10_20261001_175114.csv
+file=~/ros2exp_ws/exp/raw/phase11/delay100_loss10_best_effort_depth10_20261001_175114.csv
 received=521
 first_sequence=8
 last_sequence=595
