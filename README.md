@@ -82,7 +82,7 @@ source ~/ros2exp_ws/install/setup.bash
 
 ## 快速开始
 
-以下是从干净 clone 到最小实验的主路径。每条命令的背景、成功标准和排错方法见 [docs/phase_guide.md](docs/phase_guide.md)。
+以下是从干净 clone 到本机弱网实验的主路径；Phase 12 是可选的真实机器人扩展，单独列在 Phase 11 自动复现之后。每条命令的背景、成功标准和排错方法见 [docs/phase_guide.md](docs/phase_guide.md)。
 
 ### 1. 编译 package
 
@@ -118,7 +118,76 @@ source install/setup.bash
 
 两个脚本分别启动节点，故意没有合并成一个脚本，便于观察节点生命周期和单独替换 QoS。可选参数是 `reliable|best_effort` 和正整数 depth。按 `Ctrl-C` 停止节点。
 
-### 4. 配置 Phase 12 跨主机环境
+### 4. 保存一次逐消息实验记录
+
+subscriber 的第三个参数是 CSV 路径：
+
+```bash
+~/ros2exp_ws/scripts/run_weaknet_sub_ns.sh \
+  reliable 10 ~/ros2exp_ws/exp/raw/manual_baseline.csv
+```
+
+另一个终端启动 publisher 后，停止 subscriber，再分析：
+
+```bash
+python3 ~/ros2exp_ws/scripts/analyze_weaknet_csv.py \
+  ~/ros2exp_ws/exp/raw/manual_baseline.csv
+```
+
+### 5. 清理网络拓扑
+
+实验结束后：
+
+```bash
+~/ros2exp_ws/scripts/setup_weaknet_netns.sh down
+```
+
+如果只想清除 netem 而保留 namespace，可执行：
+
+```bash
+sudo ip netns exec weaknet_pub_ns tc qdisc del dev wnpub0 root
+```
+
+清除后应看到 `qdisc noqueue`，而不是 `qdisc netem`。不要把 `tc` 直接施加到 WSL2 的 `eth0`，除非你明确希望影响整个 WSL2 实例的网络。
+
+## Phase 11 自动复现
+
+Phase 11 套件会运行 18 轮固定条件实验，生成每条收到消息的 raw CSV、节点日志、`tc -s` 统计、分析结果和 manifest。它会为每次套件运行加时间戳，不覆盖旧数据，并在每轮和最终阶段检查 netem 是否清除。
+
+套件启动时会通过一次 `sudo -v` 请求权限，并检查 namespace 已存在；如果 Windows/WSL2 刚重启，先重新执行上面的 `setup_weaknet_netns.sh up`。
+
+```bash
+cd ~/ros2exp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+~/ros2exp_ws/scripts/setup_weaknet_netns.sh up
+~/ros2exp_ws/scripts/run_phase11_suite.sh
+```
+
+套件结束后审计产物：
+
+```bash
+python3 scripts/audit_phase11.py \
+  exp/raw/phase11/manifest.csv
+```
+
+生成汇总表和图表：
+
+```bash
+python3 scripts/plot_phase11.py \
+  exp/raw/phase11/manifest.csv \
+  --output-dir exp/plots
+```
+
+最终再次确认没有残留 netem：
+
+```bash
+sudo ip netns exec weaknet_pub_ns tc qdisc show dev wnpub0
+```
+
+预期是 `qdisc noqueue`。完整的实验变量、指标定义、有效性边界和解释方式见 [docs/experiment_protocol.md](docs/experiment_protocol.md)。当前公开结论见 [docs/experiment_results.md](docs/experiment_results.md)。
+
+## Phase 12（可选）：跨主机机器人环境
 
 Phase 12 需要 WSL2 与机器人处于可双向访问的网络中。推荐先按 [docs/troubleshooting.md](docs/troubleshooting.md) 配置 WSL2 mirrored networking 和 Hyper-V firewall，然后在 WSL2 中执行：
 
@@ -184,75 +253,6 @@ ros2 service call /phase12_safety_gateway/arm std_srvs/srv/SetBool "{data: false
 保持零速度 publisher 运行时，在 Jetson 执行 `source ~/weaknet_phase12_setup.sh verify`，只有收到实际 `Twist` 才验收通过。分层排障、配置恢复和已知限制见 [Phase 12 排障说明](docs/troubleshooting.md#10-phase-12wsl2-与真实机器人跨主机-dds-不通)。
 
 日志出现 `matched_subscribers=1` 只表示 DDS endpoint 已匹配，不代表机器人会运动。不要同时启动厂商 `joy_ctrl` 和安全网关控制链，避免多个 publisher 向 `/cmd_vel` 写入。
-
-### 5. 保存一次逐消息实验记录
-
-subscriber 的第三个参数是 CSV 路径：
-
-```bash
-~/ros2exp_ws/scripts/run_weaknet_sub_ns.sh \
-  reliable 10 ~/ros2exp_ws/exp/raw/manual_baseline.csv
-```
-
-另一个终端启动 publisher 后，停止 subscriber，再分析：
-
-```bash
-python3 ~/ros2exp_ws/scripts/analyze_weaknet_csv.py \
-  ~/ros2exp_ws/exp/raw/manual_baseline.csv
-```
-
-### 6. 清理网络拓扑
-
-实验结束后：
-
-```bash
-~/ros2exp_ws/scripts/setup_weaknet_netns.sh down
-```
-
-如果只想清除 netem 而保留 namespace，可执行：
-
-```bash
-sudo ip netns exec weaknet_pub_ns tc qdisc del dev wnpub0 root
-```
-
-清除后应看到 `qdisc noqueue`，而不是 `qdisc netem`。不要把 `tc` 直接施加到 WSL2 的 `eth0`，除非你明确希望影响整个 WSL2 实例的网络。
-
-## Phase 11 自动复现
-
-Phase 11 套件会运行 18 轮固定条件实验，生成每条收到消息的 raw CSV、节点日志、`tc -s` 统计、分析结果和 manifest。它会为每次套件运行加时间戳，不覆盖旧数据，并在每轮和最终阶段检查 netem 是否清除。
-
-套件启动时会通过一次 `sudo -v` 请求权限，并检查 namespace 已存在；如果 Windows/WSL2 刚重启，先重新执行上面的 `setup_weaknet_netns.sh up`。
-
-```bash
-cd ~/ros2exp_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-~/ros2exp_ws/scripts/setup_weaknet_netns.sh up
-~/ros2exp_ws/scripts/run_phase11_suite.sh
-```
-
-套件结束后审计产物：
-
-```bash
-python3 scripts/audit_phase11.py \
-  exp/raw/phase11/manifest.csv
-```
-
-生成汇总表和图表：
-
-```bash
-python3 scripts/plot_phase11.py \
-  exp/raw/phase11/manifest.csv \
-  --output-dir exp/plots
-```
-
-最终再次确认没有残留 netem：
-
-```bash
-sudo ip netns exec weaknet_pub_ns tc qdisc show dev wnpub0
-```
-
-预期是 `qdisc noqueue`。完整的实验变量、指标定义、有效性边界和解释方式见 [docs/experiment_protocol.md](docs/experiment_protocol.md)。当前公开结论见 [docs/experiment_results.md](docs/experiment_results.md)。
 
 ## 目录结构
 
