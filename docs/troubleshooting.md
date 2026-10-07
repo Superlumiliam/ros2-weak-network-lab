@@ -237,14 +237,13 @@ export FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA
 ros2 run <ROBOT_DRIVER_PACKAGE> <ROBOT_DRIVER_EXECUTABLE>
 ```
 
-本仓库提供了 Jetson 本地 setup 脚本。一次性从 WSL2 复制过去：
+本仓库提供了 Jetson 本地 setup 脚本和架构无关的安全网关。使用 `scripts/deploy_phase12_gateway.sh` 从 WSL 部署这些产物：
 
 ```bash
-scp scripts/setup_phase12_jetson_local.sh \
-  <ROBOT_SSH_USER>@<ROBOT_IP>:~/weaknet_phase12_setup.sh
+WEAKNET_JETSON_HOST=<ROBOT_SSH_USER>@<ROBOT_IP> scripts/deploy_phase12_gateway.sh
 ```
 
-SSH 进入 Jetson 后直接执行脚本。脚本会加载 Jetson 用户的厂商环境（或 `WEAKNET_ROBOT_ENV_FILE` 指定的环境文件），再设置 ROS/Fast DDS 变量。`up` 只启动或接管底盘 driver `Mcnamu_driver_M1`，不会启动厂商的手柄 bringup；如果检测到同名 driver 已经使用了不同的环境，脚本会报错并拒绝启动第二个 driver。这样可以避免重复 `/driver_node`。`down` 会停止脚本记录的 driver 和 Discovery Server。整个流程不会发布控制消息：
+SSH 进入 Jetson 后直接执行脚本。脚本会加载 Jetson 用户的厂商环境（或 `WEAKNET_ROBOT_ENV_FILE` 指定的环境文件），再设置 ROS/Fast DDS 变量。`up` 启动 driver、安全网关（默认 disarmed）和 Discovery Server，不启动厂商的手柄 bringup；如果检测到同名 driver 已经使用了不同的环境，脚本会报错并拒绝启动第二个 driver。这样可以避免重复 `/driver_node`。`down` 会先 disarm 网关，再停止网关、driver 和 Discovery Server。整个流程不会发布非零控制消息：
 
 ```bash
 ssh <ROBOT_SSH_USER>@<ROBOT_IP>
@@ -253,7 +252,7 @@ source ~/weaknet_phase12_setup.sh up
 source ~/weaknet_phase12_setup.sh check
 ```
 
-脚本支持 `source` 的原因是需要把 ROS/Fast DDS 变量留在当前终端；脚本不会在这种调用方式下启用 `errexit`/`pipefail`，因此 `check` 阶段的 `Unknown topic` 或网络诊断非零不会关闭 SSH。`check` 会为 CLI 使用单独的 `SUPER_CLIENT` profile，并停止旧 ROS daemon；否则 Discovery Server 的普通 `CLIENT` 只会收到与本地 endpoint 相关的发现信息，`ros2 topic list` 可能看不到远端 topic。更新 Jetson 脚本或 profile 后，先执行 `source ~/weaknet_phase12_setup.sh down`，再执行 `source ~/weaknet_phase12_setup.sh up`，确保已有 driver 不会继续使用旧的 DDS profile。
+脚本支持 `source` 的原因是需要把 ROS/Fast DDS 变量留在当前终端；脚本不会在这种调用方式下启用 `errexit`/`pipefail`，因此 `check` 阶段的 `Unknown topic` 或网络诊断非零不会关闭 SSH。`check` 会为 CLI 使用单独的 `SUPER_CLIENT` profile，并停止旧 ROS daemon；否则 Discovery Server 的普通 `CLIENT` 只会收到与本地 endpoint 相关的发现信息，`ros2 topic list` 可能看不到远端 topic。更新 Jetson 环境配置后，再执行 `up`，确保已有 driver 不会继续使用旧的 DDS profile。
 
 如果 WSL 的 `ros2 topic list` 或 `ros2 node list` 报 `xmlrpc.client.Fault: ... !rclpy.ok()`，这是 ROS 2 CLI daemon 的失效状态，不是 `/cmd_vel` 的消息错误。重新执行 WSL setup 的 `up` 或 `check` 会停止当前 domain 的旧 daemon；也可以手动执行：
 
@@ -317,16 +316,14 @@ source scripts/setup_phase12_wsl.sh firewall
 ```
 
 `firewall` 读取 `/proc/sys/net/ipv4/ip_local_port_range`，打印 Windows 管理员 PowerShell 命令。
-复制执行它即可调用仓库的 `setup_phase12_windows.ps1`。该脚本：
+复制执行即可调用仓库的 `setup_phase12_windows.ps1`。该脚本：
 
 - 验证管理员权限及 WSL VM creator ID；
 - 创建或原地更新 `ROS2-WeakNet-DDS-Dynamic`，不先删除旧规则；
 - 仅允许机器人 IP 访问 WSL 实际动态 TCP 端口范围，不修改默认入站策略；
 - 输出 ActiveStore 规则及策略供核查；支持 `-WhatIf`、`-Action Check` 和 `-Action Down`。
 
-该范围也可能包含其他服务的监听端口，因此只适用于可信机器人。
-WSL 重启、机器人 IP 或动态范围改变后，重新执行该流程；配置脚本不会修改 Linux 全局端口范围。
-只打印命令不等于规则已经生效，必须在 Windows 执行成功，并用 Jetson `verify` 验证消息。
+该范围也可能包含其他服务的监听端口，因此只适用于可信机器人。WSL 重启、机器人 IP 或动态范围改变后，重新执行该流程；配置脚本不会修改 Linux 全局端口范围。只打印命令不等于规则已经生效，必须在 Windows 执行成功，并用 Jetson `verify` 验证消息。
 
 WSL mirrored networking 可能同时有 LAN、内部和 VPN 地址。setup 从到机器人路由提取源地址，
 写入 TCP interface whitelist，避免广播不可达地址。
@@ -416,12 +413,12 @@ ROS_DOMAIN_ID / RMW / ROS_DISCOVERY_SERVER / FASTDDS_BUILTIN_TRANSPORTS
 
 ### 10.9 本项目 Phase 12 配置与验证边界
 
-本项目的 Phase 12 流程基于 **NVIDIA Jetson Orin Nano**，并在该设备上验证过 WSL/Jetson 的 ROS graph 查询、双向 DDS 数据收发，以及默认全零的 `/cmd_vel` 消息接收。配置包含 ROS domain 61、`rmw_fastrtps_cpp`、TCP Discovery Server（默认端口 42100）和每个参与者独立分配的动态 TCP 数据端口。部署时仍应以本机脚本参数和实际环境为准。
+本项目的 Phase 12 流程使用 ROS domain 61、`rmw_fastrtps_cpp`、TCP Discovery Server（默认端口 42100）和每个参与者独立分配的动态 TCP 数据端口。Jetson 上的 Python 安全网关默认 disarmed，将 WSL 的 `/cmd_vel_remote` 限幅后转到 `/cmd_vel`，命令超时会输出零速度并锁存 disarmed，需显式重新 arm。部署时仍应以本机脚本参数和实际环境为准。
 
-**流程仅作参考**：其他 Jetson 型号、JetPack/ROS 版本、厂商 workspace、网络与防火墙策略可能不同。脚本可启动底盘 driver，也提供能够发布非零速度的控制节点；默认全零不构成安全保护。现有验证没有覆盖真实车轮运动、硬件急停、限速或断网停车。不要在完成现场安全评估前发布非零速度。`matched_subscribers=1` 仅表示 endpoint 匹配，验证实际数据请在 Jetson 运行：
+**流程仅作参考**：其他 Jetson 型号、JetPack/ROS 版本、厂商 workspace、网络与防火墙策略可能不同。网关默认失能，软件限幅 x/y 各 0.25 m/s、z 角速度 0.5 rad/s，默认输入超时 0.75 秒后输出零速度；这不是硬件急停，ROS domain 内其他节点仍能调用 arm service。不要在完成现场安全评估前 arm 或发送非零实车命令。`matched_subscribers=1` 仅表示 endpoint 匹配，验证实际数据请在 Jetson 运行：
 
 ```bash
 source ~/weaknet_phase12_setup.sh verify
 ```
 
-`verify` 只接收 `/cmd_vel` 消息，不会发布控制命令。排障时也应优先使用只读 echo 或官方 talker/listener，不要用未经确认的控制消息作为网络测试。
+`verify` 只接收 `/cmd_vel` 消息，不会发布控制命令。排障时优先使用只读 echo 或官方 talker/listener，不要用未经确认的控制消息作为网络测试。

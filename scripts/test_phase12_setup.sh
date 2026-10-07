@@ -5,7 +5,7 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 phase12_test_dir=$(mktemp -d /tmp/weaknet-phase12-test.XXXXXX)
 export phase12_test_dir
 touch "$phase12_test_dir/setup.bash"
-bash -n scripts/setup_phase12_wsl.sh scripts/setup_phase12_jetson_local.sh scripts/run_phase12_cmdvel_pub.sh
+bash -n scripts/setup_phase12_wsl.sh scripts/setup_phase12_jetson_local.sh scripts/run_phase12_cmdvel_pub.sh scripts/deploy_phase12_gateway.sh
 (
   set +e
   set +o pipefail

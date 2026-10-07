@@ -3,6 +3,7 @@
 #include <cmath>
 #include <memory>
 #include <stdexcept>
+#include <string>
 
 #include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -13,17 +14,26 @@ public:
   WeaknetCmdvelPublisher()
   : Node("weaknet_cmdvel_pub")
   {
-    rate_hz_ = declare_parameter<double>("rate_hz", 1.0);
+    rate_hz_ = declare_parameter<double>("rate_hz", 10.0);
     linear_x_ = declare_parameter<double>("linear_x", 0.0);
     linear_y_ = declare_parameter<double>("linear_y", 0.0);
     angular_z_ = declare_parameter<double>("angular_z", 0.0);
+    topic_ = declare_parameter<std::string>("topic", "/cmd_vel_remote");
 
     if (!(rate_hz_ > 0.0) || !std::isfinite(rate_hz_)) {
       throw std::invalid_argument("rate_hz must be a finite positive number");
     }
+    if (topic_.empty()) {
+      throw std::invalid_argument("topic must not be empty");
+    }
+    if (!std::isfinite(linear_x_) || !std::isfinite(linear_y_) ||
+      !std::isfinite(angular_z_))
+    {
+      throw std::invalid_argument("velocity parameters must be finite numbers");
+    }
 
     publisher_ = create_publisher<geometry_msgs::msg::Twist>(
-      "/cmd_vel", rclcpp::QoS(10).reliable());
+      topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable());
 
     const auto period = std::chrono::milliseconds(
       static_cast<int64_t>(std::max(1.0, 1000.0 / rate_hz_)));
@@ -31,8 +41,8 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "publishing /cmd_vel at %.2f Hz: linear.x=%.3f linear.y=%.3f angular.z=%.3f",
-      rate_hz_, linear_x_, linear_y_, angular_z_);
+      "publishing %s at %.2f Hz: linear.x=%.3f linear.y=%.3f angular.z=%.3f",
+      topic_.c_str(), rate_hz_, linear_x_, linear_y_, angular_z_);
   }
 
 private:
@@ -45,7 +55,7 @@ private:
     publisher_->publish(command);
     RCLCPP_INFO_THROTTLE(
       get_logger(), *get_clock(), 1000,
-      "cmd_vel linear.x=%.3f linear.y=%.3f angular.z=%.3f matched_subscribers=%zu",
+      "remote cmd_vel linear.x=%.3f linear.y=%.3f angular.z=%.3f matched_subscribers=%zu",
       linear_x_, linear_y_, angular_z_, publisher_->get_subscription_count());
   }
 
@@ -53,6 +63,7 @@ private:
   double linear_x_{0.0};
   double linear_y_{0.0};
   double angular_z_{0.0};
+  std::string topic_{"/cmd_vel_remote"};
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 };

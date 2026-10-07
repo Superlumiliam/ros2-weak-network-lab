@@ -25,13 +25,16 @@ DRIVER_PACKAGE="${WEAKNET_ROBOT_DRIVER_PACKAGE:-yahboomcar_bringup}"
 DRIVER_EXECUTABLE="${WEAKNET_ROBOT_DRIVER_EXECUTABLE:-Mcnamu_driver_M1}"
 ROBOT_ENV_FILE="${WEAKNET_ROBOT_ENV_FILE:-}"
 CONTROL_TOPIC="${WEAKNET_CONTROL_TOPIC:-/cmd_vel}"
+GATEWAY_SCRIPT="${WEAKNET_SAFETY_GATEWAY_SCRIPT:-$HOME/.cache/weaknet_phase12/phase12_safety_gateway.py}"
 JOYSTICK_PROCESS_PATTERN="${WEAKNET_ROBOT_JOYSTICK_PROCESS_PATTERN:-yahboom_joy_M1}"
 
 STATE_DIR="${WEAKNET_REMOTE_STATE_DIR:-$HOME/.cache/weaknet_phase12}"
 SERVER_PID_FILE="$STATE_DIR/fastdds_discovery.pid"
 DRIVER_PID_FILE="$STATE_DIR/robot_driver.pid"
+GATEWAY_PID_FILE="$STATE_DIR/safety_gateway.pid"
 SERVER_LOG="$STATE_DIR/fastdds_discovery.log"
 DRIVER_LOG="$STATE_DIR/robot_driver.log"
+GATEWAY_LOG="$STATE_DIR/safety_gateway.log"
 ENV_FILE="$STATE_DIR/environment.sh"
 PROFILE_PATH="$STATE_DIR/fastdds_tcp_jetson.xml"
 SUPER_PROFILE_PATH="$STATE_DIR/fastdds_tcp_jetson_super_client.xml"
@@ -45,6 +48,8 @@ Usage:
   ./setup_phase12_jetson_local.sh takeover  # stop the known vendor joystick launch first
   ./setup_phase12_jetson_local.sh check
   ./setup_phase12_jetson_local.sh verify  # receive one /cmd_vel sample, no publishing
+  ros2 service call /phase12_safety_gateway/arm std_srvs/srv/SetBool "{data: true}"
+  ros2 service call /phase12_safety_gateway/arm std_srvs/srv/SetBool "{data: false}"
   ./setup_phase12_jetson_local.sh down
 
 Optional configuration:
@@ -59,6 +64,7 @@ Optional configuration:
   WEAKNET_ROBOT_DRIVER_EXECUTABLE Driver executable, default: Mcnamu_driver_M1.
   WEAKNET_ROBOT_ENV_FILE        Optional vendor-specific environment file.
   WEAKNET_CONTROL_TOPIC         Read-only topic checked by up/check, default: /cmd_vel.
+  WEAKNET_SAFETY_GATEWAY_SCRIPT Installed architecture-independent gateway script path.
   WEAKNET_ROBOT_JOYSTICK_PROCESS_PATTERN
                                 Optional joystick process pattern used for warnings.
 
@@ -388,6 +394,27 @@ start_driver() {
   echo "Robot driver started: PID $(cat "$DRIVER_PID_FILE")"
 }
 
+start_safety_gateway() {
+  if [[ ! -f "$GATEWAY_SCRIPT" ]]; then
+    echo "Error: safety gateway artifact not found: $GATEWAY_SCRIPT" >&2
+    echo "Deploy it from WSL with scripts/deploy_phase12_gateway.sh first." >&2
+    return 1
+  fi
+  if [[ -s "$GATEWAY_PID_FILE" ]] && pid_is_process "$GATEWAY_PID_FILE" "$GATEWAY_SCRIPT"; then
+    echo "Safety gateway already running: PID $(cat "$GATEWAY_PID_FILE")"
+    return 0
+  fi
+  rm -f "$GATEWAY_PID_FILE"
+  nohup python3 "$GATEWAY_SCRIPT" </dev/null >"$GATEWAY_LOG" 2>&1 &
+  echo $! > "$GATEWAY_PID_FILE"
+  sleep 2
+  if ! pid_is_process "$GATEWAY_PID_FILE" "$GATEWAY_SCRIPT"; then
+    echo "Error: safety gateway did not stay running; log: $GATEWAY_LOG" >&2
+    return 1
+  fi
+  echo "Safety gateway started DISARMED: PID $(cat "$GATEWAY_PID_FILE")"
+}
+
 show_status() {
   echo "Jetson IP: $JETSON_IP"
   echo "Environment file: $ENV_FILE"
@@ -422,6 +449,12 @@ show_status() {
     else
       echo "not running"
     fi
+  fi
+  echo "--- Jetson safety gateway ---"
+  if [[ -s "$GATEWAY_PID_FILE" ]] && pid_is_process "$GATEWAY_PID_FILE" "$GATEWAY_SCRIPT"; then
+    echo "running (starts disarmed): PID $(cat "$GATEWAY_PID_FILE")"
+  else
+    echo "not running"
   fi
   ps -ef | grep -E '[M]cnamu_driver_M1|[y]ahboom_joy_M1|[j]oy_node' || true
   echo "--- Talker process candidates ---"
@@ -465,6 +498,14 @@ stop_existing_driver() {
   fi
 }
 
+stop_safety_gateway() {
+  # Ask the node to publish zero while the driver is still available.
+  timeout --signal=INT --kill-after=1s 5s ros2 service call \
+    /phase12_safety_gateway/arm std_srvs/srv/SetBool "{data: false}" \
+    >/dev/null 2>&1 || true
+  stop_pid_file "$GATEWAY_PID_FILE" "Safety gateway" || return 1
+}
+
 stop_discovery_server() {
   local tracked_pid=""
   if [[ -s "$SERVER_PID_FILE" ]]; then
@@ -504,9 +545,15 @@ weaknet_phase12_main() {
       if [[ "$ACTION" == takeover ]]; then
         take_over_vendor_launch || return 1
       fi
+      if joystick_process_is_alive; then
+        echo "Error: a joystick control process is running; refusing to start the safety gateway." >&2
+        echo "Stop the intended joystick launch first, verify the robot is stationary, then retry." >&2
+        return 1
+      fi
       write_environment_file || return 1
       start_discovery_server || return 1
       start_driver || return 1
+      start_safety_gateway || return 1
       reset_cli_daemon
       show_status || return 1
       ;;
@@ -526,6 +573,7 @@ weaknet_phase12_main() {
       fi
       ;;
     down)
+      stop_safety_gateway || return 1
       if [[ -s "$DRIVER_PID_FILE" ]]; then
         stop_pid_file "$DRIVER_PID_FILE" "Robot driver" || return 1
       else

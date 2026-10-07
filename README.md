@@ -135,14 +135,15 @@ source ~/ros2exp_ws/scripts/setup_phase12_wsl.sh up
 # 首次配置：打印 Windows 管理员 PowerShell 命令，在 Windows 执行该命令
 source ~/ros2exp_ws/scripts/setup_phase12_wsl.sh firewall
 
-# 一次性把 Jetson 本地 setup 脚本复制过去
-scp ~/ros2exp_ws/scripts/setup_phase12_jetson_local.sh \
-  <ROBOT_SSH_USER>@<ROBOT_IP>:~/weaknet_phase12_setup.sh
+# 从 WSL 部署架构无关的安全网关脚本和 Jetson lifecycle setup
+WEAKNET_JETSON_HOST=<ROBOT_SSH_USER>@<ROBOT_IP> \
+  ~/ros2exp_ws/scripts/deploy_phase12_gateway.sh
 
 # SSH 进入 Jetson；之后重启只需在 Jetson 本机执行这一条
 ssh <ROBOT_SSH_USER>@<ROBOT_IP>
 chmod +x ~/weaknet_phase12_setup.sh
-source ~/weaknet_phase12_setup.sh up
+# 若当前是已知厂商 joystick launch，确认小车静止后用 takeover；否则用 up
+source ~/weaknet_phase12_setup.sh takeover
 ```
 
 常用检查和停止命令：
@@ -154,21 +155,35 @@ source ~/weaknet_phase12_setup.sh check
 source ~/weaknet_phase12_setup.sh down
 ```
 
-Jetson 脚本在 Jetson 本机运行，不保存 SSH 密码，也不会向 `/cmd_vel` 发布消息；WSL 脚本只配置 WSL 当前 shell。Jetson setup 只启动或接管 `Mcnamu_driver_M1` 底盘 driver，不再启动厂商的手柄 launch；`joy_node`/`joy_ctrl` 是可选控制端，实验 publisher 应由本仓库的 C++ 节点提供。脚本会拒绝启动第二个 driver，避免重复 `/driver_node`。机器人 workspace、driver package、driver executable 或厂商环境文件不同时，可以通过 `WEAKNET_ROBOT_WORKSPACE`、`WEAKNET_ROBOT_DRIVER_PACKAGE`、`WEAKNET_ROBOT_DRIVER_EXECUTABLE` 和 `WEAKNET_ROBOT_ENV_FILE` 覆盖默认值。WSL `up/check` 会清理当前 domain 的失效 ROS CLI daemon，并让交互式 `ros2` 默认使用 `SUPER_CLIENT` profile；Jetson driver 仍使用普通 `CLIENT` profile。
+Jetson 脚本在 Jetson 本机运行，不保存 SSH 密码，也不会从 setup 直接发送运动命令；WSL 脚本只配置 WSL 当前 shell。Jetson `up` 启动底盘 driver 和默认失能的安全网关，不启动厂商手柄 launch。WSL publisher 只向 `/cmd_vel_remote` 发命令，Jetson 网关负责限幅并转发到 `/cmd_vel`；watchdog 超时会输出零速度并锁存 disarmed，需显式重新 arm。它不是 ROS 身份认证机制：同一 ROS domain 的参与者可调用 arm/disarm service。脚本会拒绝启动第二个 driver，避免重复 `/driver_node`。机器人 workspace、driver package、driver executable 或厂商环境文件不同时，可以通过 `WEAKNET_ROBOT_WORKSPACE`、`WEAKNET_ROBOT_DRIVER_PACKAGE`、`WEAKNET_ROBOT_DRIVER_EXECUTABLE` 和 `WEAKNET_ROBOT_ENV_FILE` 覆盖默认值。WSL `up/check` 会清理当前 domain 的失效 ROS CLI daemon，并让交互式 `ros2` 默认使用 `SUPER_CLIENT` profile；Jetson driver 仍使用普通 `CLIENT` profile。
 
-环境确认后，在 WSL 中先用零速度启动自己的控制 publisher，验证它是否匹配到 Jetson 的 `/driver_node`：
+环境确认后，在 WSL 中先用零速度启动控制 publisher。它只连接安全网关的 `/cmd_vel_remote` 输入；Jetson 的 `/cmd_vel` 应由网关作为唯一 publisher：
 
 ```bash
 source ~/ros2exp_ws/install/setup.bash
-ros2 run weaknet_demo weaknet_cmdvel_pub \
-  --ros-args -p rate_hz:=20.0 -p linear_x:=0.0 -p linear_y:=0.0 -p angular_z:=0.0
+~/ros2exp_ws/scripts/run_phase12_cmdvel_pub.sh \
+  --ros-args -p rate_hz:=10.0 -p linear_x:=0.0 -p linear_y:=0.0 -p angular_z:=0.0
 ```
+
+真车只做运动测试时，先确认场地净空、车轮/急停处于可控状态，再在 Jetson 显式 arm：
+
+```bash
+ros2 service call /phase12_safety_gateway/arm std_srvs/srv/SetBool "{data: true}"
+```
+
+结束后立即 disarm；WSL publisher 停止输入超过 0.75 秒会触发 watchdog 零速并锁存 disarmed，恢复通信后必须重新 arm：
+
+```bash
+ros2 service call /phase12_safety_gateway/arm std_srvs/srv/SetBool "{data: false}"
+```
+
+默认上限为线速度 x/y 各 0.25 m/s、角速度 z 0.5 rad/s，可通过 Jetson 网关 ROS 参数调整。该软件层不替代硬件急停，且 ROS graph 内的参与者能够调用 arm service。
 
 所有 ROS 参与者使用独立动态 TCP 端口。Windows setup 仅允许机器人 IP 访问 WSL 当前动态端口范围；普通 `ros2 run/topic pub/echo/list` 使用同一环境，无需专用固定端口 launcher。旧版 `46000` 配置应先清理：`unset WEAKNET_DDS_DATA_PORT WEAKNET_CONTROL_DATA_PORT WEAKNET_CONTROL_PROFILE_PATH`。WSL 重启后动态范围可能改变，需重新检查 `firewall` 输出并更新规则。
 
-保持零速度发布时，在 Jetson 执行 `source ~/weaknet_phase12_setup.sh verify`，只有收到实际 `Twist` 才验收通过。分层排障、配置恢复和已知限制见 [Phase 12 排障说明](docs/troubleshooting.md#10-phase-12wsl2-与真实机器人跨主机-dds-不通)。
+保持零速度 publisher 运行时，在 Jetson 执行 `source ~/weaknet_phase12_setup.sh verify`，只有收到实际 `Twist` 才验收通过。分层排障、配置恢复和已知限制见 [Phase 12 排障说明](docs/troubleshooting.md#10-phase-12wsl2-与真实机器人跨主机-dds-不通)。
 
-日志出现 `matched_subscribers=1` 只表示 DDS endpoint 已匹配，不代表机器人会运动；本节点的默认速度也是全零。实验中不要同时启动厂商 `joy_ctrl` 和本节点，否则两个 publisher 会同时向 `/cmd_vel` 写入控制命令。
+日志出现 `matched_subscribers=1` 只表示 DDS endpoint 已匹配，不代表机器人会运动。不要同时启动厂商 `joy_ctrl` 和安全网关控制链，避免多个 publisher 向 `/cmd_vel` 写入。
 
 ### 5. 保存一次逐消息实验记录
 
@@ -295,7 +310,7 @@ sudo ip netns exec weaknet_pub_ns tc qdisc show dev wnpub0
 - `tc dropped` 统计的是网络包，不是 ROS 2 应用消息；
 - sequence gap 是应用层丢失的推断值，不能替代 DDS 内部传输统计；
 - 单轮实验不能代表普遍规律，改变 CPU 负载、DDS 版本、消息大小或网络拓扑后应重新建立 baseline；
-- Phase 12 面向 NVIDIA Jetson Orin Nano 实现了跨主机配置和 `/cmd_vel` publisher；默认速度为零，但节点可配置非零速度。流程仅作参考，仓库未实现或验证硬件急停、限速、命令超时和断网保护，未经实机安全评估不要发布非零速度。
+- Phase 12 提供 Jetson 端默认失能、有限速与命令超时归零的软件网关；它不替代硬件急停，且 ROS domain 内的其他参与者可调用 arm service。任何非零实车测试都必须先做现场安全评估。
 
 ## 许可证
 
