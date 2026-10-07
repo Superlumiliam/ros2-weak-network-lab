@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>jetson_base_driver</name>
+  <version>0.1.0</version>
+  <description>Jetson M1 base driver imported from the robot vendor workspace.</description>
+  <maintainer email="maintainers@example.com">Project Maintainers</maintainer>
+  <license>LicenseRef-Vendor-Unspecified</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>yahboomcar_msgs</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

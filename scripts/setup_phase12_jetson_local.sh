@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Purpose: Configure Jetson ROS 2/Fast DDS, Discovery Server, and only the vendor base driver after reboot.
+# Purpose: Configure Jetson ROS 2/Fast DDS, Discovery Server, and the repository base driver after reboot.
 
 # This file is intentionally usable both as an executable and via `source`.
 # Do not enable errexit when sourced: errexit is a shell-wide option and would
@@ -20,21 +20,19 @@ DISCOVERY_PORT="${WEAKNET_DISCOVERY_SERVER_PORT:-42100}"
 JETSON_DDS_DATA_PORT="${WEAKNET_JETSON_DDS_DATA_PORT:-0}"
 JETSON_IP="${WEAKNET_JETSON_IP:-${WEAKNET_DISCOVERY_BIND_IP:-}}"
 SERVER_GUID_PREFIX="${WEAKNET_SERVER_GUID_PREFIX:-44.53.00.5f.45.50.52.4f.53.49.4d.41}"
-ROBOT_WORKSPACE="${WEAKNET_ROBOT_WORKSPACE:-$HOME/yahboomcar_ros2_ws/yahboomcar_ws}"
-DRIVER_PACKAGE="${WEAKNET_ROBOT_DRIVER_PACKAGE:-yahboomcar_bringup}"
+VENDOR_WORKSPACE="${WEAKNET_VENDOR_WORKSPACE:-$HOME/yahboomcar_ros2_ws/yahboomcar_ws}"
+ROBOT_WORKSPACE="${WEAKNET_ROBOT_WORKSPACE:-$HOME/ros2exp_ws}"
+DRIVER_PACKAGE="${WEAKNET_ROBOT_DRIVER_PACKAGE:-jetson_base_driver}"
 DRIVER_EXECUTABLE="${WEAKNET_ROBOT_DRIVER_EXECUTABLE:-Mcnamu_driver_M1}"
 ROBOT_ENV_FILE="${WEAKNET_ROBOT_ENV_FILE:-}"
 CONTROL_TOPIC="${WEAKNET_CONTROL_TOPIC:-/cmd_vel}"
-GATEWAY_SCRIPT="${WEAKNET_SAFETY_GATEWAY_SCRIPT:-$HOME/.cache/weaknet_phase12/phase12_safety_gateway.py}"
 JOYSTICK_PROCESS_PATTERN="${WEAKNET_ROBOT_JOYSTICK_PROCESS_PATTERN:-yahboom_joy_M1}"
 
 STATE_DIR="${WEAKNET_REMOTE_STATE_DIR:-$HOME/.cache/weaknet_phase12}"
 SERVER_PID_FILE="$STATE_DIR/fastdds_discovery.pid"
 DRIVER_PID_FILE="$STATE_DIR/robot_driver.pid"
-GATEWAY_PID_FILE="$STATE_DIR/safety_gateway.pid"
 SERVER_LOG="$STATE_DIR/fastdds_discovery.log"
 DRIVER_LOG="$STATE_DIR/robot_driver.log"
-GATEWAY_LOG="$STATE_DIR/safety_gateway.log"
 ENV_FILE="$STATE_DIR/environment.sh"
 PROFILE_PATH="$STATE_DIR/fastdds_tcp_jetson.xml"
 SUPER_PROFILE_PATH="$STATE_DIR/fastdds_tcp_jetson_super_client.xml"
@@ -48,8 +46,6 @@ Usage:
   ./setup_phase12_jetson_local.sh takeover  # stop the known vendor joystick launch first
   ./setup_phase12_jetson_local.sh check
   ./setup_phase12_jetson_local.sh verify  # receive one /cmd_vel sample, no publishing
-  ros2 service call /phase12_safety_gateway/arm std_srvs/srv/SetBool "{data: true}"
-  ros2 service call /phase12_safety_gateway/arm std_srvs/srv/SetBool "{data: false}"
   ./setup_phase12_jetson_local.sh down
 
 Optional configuration:
@@ -59,12 +55,12 @@ Optional configuration:
   WEAKNET_SERVER_GUID_PREFIX   Fast DDS Discovery Server GUID prefix, default: server id 0.
   WEAKNET_DISCOVERY_SERVER_PORT Fast DDS TCP discovery port, default: 42100.
   WEAKNET_JETSON_DDS_DATA_PORT Fast DDS TCP data port, default: 0 (automatic per process).
-  WEAKNET_ROBOT_WORKSPACE      Robot workspace overlay path.
-  WEAKNET_ROBOT_DRIVER_PACKAGE Driver package, default: yahboomcar_bringup.
+  WEAKNET_VENDOR_WORKSPACE     Vendor underlay providing yahboomcar_msgs.
+  WEAKNET_ROBOT_WORKSPACE      Repository workspace overlay, default: ~/ros2exp_ws.
+  WEAKNET_ROBOT_DRIVER_PACKAGE Driver package, default: jetson_base_driver.
   WEAKNET_ROBOT_DRIVER_EXECUTABLE Driver executable, default: Mcnamu_driver_M1.
   WEAKNET_ROBOT_ENV_FILE        Optional vendor-specific environment file.
   WEAKNET_CONTROL_TOPIC         Read-only topic checked by up/check, default: /cmd_vel.
-  WEAKNET_SAFETY_GATEWAY_SCRIPT Installed architecture-independent gateway script path.
   WEAKNET_ROBOT_JOYSTICK_PROCESS_PATTERN
                                 Optional joystick process pattern used for warnings.
 
@@ -147,12 +143,15 @@ prepare_environment() {
     return 1
   fi
   if [[ ! -f "$WORKSPACE_SETUP" ]]; then
-    echo "Error: robot workspace overlay not found: $WORKSPACE_SETUP" >&2
+    echo "Error: repository workspace overlay not found: $WORKSPACE_SETUP" >&2
     return 1
   fi
 
   # shellcheck disable=SC1090
   source "$ROS_SETUP" || return 1
+  if [[ -f "$VENDOR_WORKSPACE/install/setup.bash" ]]; then
+    source "$VENDOR_WORKSPACE/install/setup.bash" || return 1
+  fi
   # shellcheck disable=SC1090
   source "$WORKSPACE_SETUP" || return 1
   export ROS_DOMAIN_ID="$ROS_DOMAIN_ID_VALUE"
@@ -319,6 +318,13 @@ driver_env_matches() {
     grep -Fqx "ROS_DISCOVERY_SERVER=TCPv4:[${JETSON_IP}]:${DISCOVERY_PORT}" <<<"$process_env"
 }
 
+driver_package_matches() {
+  local args
+  args="$(ps -p "$1" -o args=)" || return 1
+  [[ "$args" == *"ros2 run $DRIVER_PACKAGE $DRIVER_EXECUTABLE"* ||
+     "$args" == *"/lib/$DRIVER_PACKAGE/$DRIVER_EXECUTABLE"* ]]
+}
+
 joystick_process_is_alive() {
   pgrep -f -- "$JOYSTICK_PROCESS_PATTERN" >/dev/null 2>&1
 }
@@ -371,14 +377,14 @@ start_driver() {
   fi
 
   if [[ -n "$existing_pid" ]]; then
-    if driver_env_matches "$existing_pid"; then
+    if driver_env_matches "$existing_pid" && driver_package_matches "$existing_pid"; then
       echo "$existing_pid" > "$DRIVER_PID_FILE"
       echo "Robot driver already configured: PID $existing_pid"
       return
     fi
-    echo "Error: an existing $DRIVER_EXECUTABLE uses a different ROS/Fast DDS environment (PID $existing_pid)." >&2
+    echo "Error: an existing $DRIVER_EXECUTABLE uses a different package or ROS/Fast DDS environment (PID $existing_pid)." >&2
     echo "Stop that vendor driver explicitly before running this setup script; no duplicate driver will be started." >&2
-    echo "For the standard yahboomcar_joy_launch.py only, use: source ~/weaknet_phase12_setup.sh takeover" >&2
+    echo "For the standard yahboomcar_joy_launch.py only, use: source ~/ros2exp_ws/scripts/setup_phase12_jetson_local.sh takeover" >&2
     return 1
   fi
 
@@ -392,27 +398,6 @@ start_driver() {
     return 1
   fi
   echo "Robot driver started: PID $(cat "$DRIVER_PID_FILE")"
-}
-
-start_safety_gateway() {
-  if [[ ! -f "$GATEWAY_SCRIPT" ]]; then
-    echo "Error: safety gateway artifact not found: $GATEWAY_SCRIPT" >&2
-    echo "Deploy it from WSL with scripts/deploy_phase12_gateway.sh first." >&2
-    return 1
-  fi
-  if [[ -s "$GATEWAY_PID_FILE" ]] && pid_is_process "$GATEWAY_PID_FILE" "$GATEWAY_SCRIPT"; then
-    echo "Safety gateway already running: PID $(cat "$GATEWAY_PID_FILE")"
-    return 0
-  fi
-  rm -f "$GATEWAY_PID_FILE"
-  nohup python3 "$GATEWAY_SCRIPT" </dev/null >"$GATEWAY_LOG" 2>&1 &
-  echo $! > "$GATEWAY_PID_FILE"
-  sleep 2
-  if ! pid_is_process "$GATEWAY_PID_FILE" "$GATEWAY_SCRIPT"; then
-    echo "Error: safety gateway did not stay running; log: $GATEWAY_LOG" >&2
-    return 1
-  fi
-  echo "Safety gateway started DISARMED: PID $(cat "$GATEWAY_PID_FILE")"
 }
 
 show_status() {
@@ -449,12 +434,6 @@ show_status() {
     else
       echo "not running"
     fi
-  fi
-  echo "--- Jetson safety gateway ---"
-  if [[ -s "$GATEWAY_PID_FILE" ]] && pid_is_process "$GATEWAY_PID_FILE" "$GATEWAY_SCRIPT"; then
-    echo "running (starts disarmed): PID $(cat "$GATEWAY_PID_FILE")"
-  else
-    echo "not running"
   fi
   ps -ef | grep -E '[M]cnamu_driver_M1|[y]ahboom_joy_M1|[j]oy_node' || true
   echo "--- Talker process candidates ---"
@@ -498,14 +477,6 @@ stop_existing_driver() {
   fi
 }
 
-stop_safety_gateway() {
-  # Ask the node to publish zero while the driver is still available.
-  timeout --signal=INT --kill-after=1s 5s ros2 service call \
-    /phase12_safety_gateway/arm std_srvs/srv/SetBool "{data: false}" \
-    >/dev/null 2>&1 || true
-  stop_pid_file "$GATEWAY_PID_FILE" "Safety gateway" || return 1
-}
-
 stop_discovery_server() {
   local tracked_pid=""
   if [[ -s "$SERVER_PID_FILE" ]]; then
@@ -546,14 +517,13 @@ weaknet_phase12_main() {
         take_over_vendor_launch || return 1
       fi
       if joystick_process_is_alive; then
-        echo "Error: a joystick control process is running; refusing to start the safety gateway." >&2
+        echo "Error: a joystick control process is running; refusing to start the base driver." >&2
         echo "Stop the intended joystick launch first, verify the robot is stationary, then retry." >&2
         return 1
       fi
       write_environment_file || return 1
       start_discovery_server || return 1
       start_driver || return 1
-      start_safety_gateway || return 1
       reset_cli_daemon
       show_status || return 1
       ;;
@@ -562,18 +532,19 @@ weaknet_phase12_main() {
       show_status || return 1
       ;;
     verify)
-      echo "Checking actual receipt on $CONTROL_TOPIC (15 second limit)..."
+      echo "Checking actual zero Twist receipt on $CONTROL_TOPIC (15 second limit)..."
       if timeout --signal=INT --kill-after=3s 15s ros2 topic echo \
         "$CONTROL_TOPIC" geometry_msgs/msg/Twist \
-        --qos-reliability reliable --qos-durability volatile --once; then
-        echo 'PASS: received a live Twist sample; discovery alone is not the acceptance criterion.'
+        --qos-reliability reliable --qos-durability volatile \
+        --filter 'all(v == 0.0 for v in (m.linear.x, m.linear.y, m.linear.z, m.angular.x, m.angular.y, m.angular.z))' \
+        --once; then
+        echo 'PASS: received a live Twist with all six components zero.'
       else
-        echo 'FAIL: no verified Twist receipt; inspect TCP data connections and firewall.' >&2
+        echo 'FAIL: no verified zero Twist receipt; inspect TCP data connections and firewall.' >&2
         return 1
       fi
       ;;
     down)
-      stop_safety_gateway || return 1
       if [[ -s "$DRIVER_PID_FILE" ]]; then
         stop_pid_file "$DRIVER_PID_FILE" "Robot driver" || return 1
       else

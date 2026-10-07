@@ -92,23 +92,10 @@ namespace → veth pair → qdisc → netem → DDS UDP packet
 
 完成标准：manifest 中有效实验全部通过审计，结束时 qdisc 没有残留 netem；绘图脚本只读取 manifest 中标记为 `valid` 的实验。
 
-## Phase 12：Jetson Orin Nano 跨主机扩展
+## Phase 12：Jetson 底盘接入与零速通信
 
-本阶段提供 WSL2 与 Jetson 间的 Fast DDS TCP 配置、底盘 driver 管理，以及 Jetson 端的失能默认安全网关。WSL 发往 `/cmd_vel_remote`，网关限幅并转发到 `/cmd_vel`；命令超时则输出零速度并锁存 disarmed，需显式重新 arm。跨主机配置与排错步骤见 [troubleshooting.md 的 Phase 12 部分](troubleshooting.md#10-phase-12wsl2-与真实机器人跨主机-dds-不通)。
+本阶段达成标准为 WSL 与 Jetson 小车正常零速通信：WSL 向 `/cmd_vel` 发布六个分量全部为零的 `Twist`，Jetson 单个 Driver 订阅该话题，并在 Jetson 验证实际零速消息接收。
 
-**以下流程仅作参考**：局域网、WSL mirrored networking、防火墙策略、Jetson 系统镜像和厂商 driver 版本都会影响结果。请先按自己的设备核对地址、ROS domain、RMW、driver package 和启动方式。Jetson 网关默认 disarmed；软件限速和 watchdog 不替代硬件急停，也不提供 ROS 身份认证。
+Driver 原样复制到本仓库 `src/jetson_base_driver`，提供可编译的 ROS package、可发现的 executable 和来源校验值。当前零速验收使用该 package 在 Jetson 上编译出的 Driver 产物。网络与 ROS 环境继续由 setup 脚本管理。
 
-```bash
-# WSL：设置当前可达的 Jetson 地址并加载配置
-export WEAKNET_ROBOT_IP=<JETSON_IP>
-source scripts/setup_phase12_wsl.sh up
-
-# WSL：复制架构无关网关产物与 Jetson setup 脚本
-WEAKNET_JETSON_HOST=<JETSON_USER>@<JETSON_IP> scripts/deploy_phase12_gateway.sh
-
-# Jetson SSH 终端：启动网关（仍为 disarmed）与底盘 driver
-source ~/weaknet_phase12_setup.sh up
-source ~/weaknet_phase12_setup.sh check
-```
-
-验证零速链路时无需 arm。只有完成现场安全检查后才显式调用 `/phase12_safety_gateway/arm`；停止实验时 disarm。非零命令端到端动作仍需单独实机验收。
+独立 Safety Gateway 已移除；限幅、watchdog、arm/disarm 和非零运动均不属于本阶段验收。完整复现命令和验收标准见 [phase12_jetson.md](phase12_jetson.md)。网络排错见 [troubleshooting.md](troubleshooting.md#10-phase-12wsl2-与真实机器人跨主机-dds-不通)。

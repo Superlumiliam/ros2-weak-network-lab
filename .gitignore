@@ -7,6 +7,7 @@
 /.vscode/
 /.agents/
 /.codex/
+/AGENTS.md
 
 # CMake / 编译数据库生成文件
 /compile_commands.json

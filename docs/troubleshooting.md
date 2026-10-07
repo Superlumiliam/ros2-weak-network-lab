@@ -237,19 +237,19 @@ export FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA
 ros2 run <ROBOT_DRIVER_PACKAGE> <ROBOT_DRIVER_EXECUTABLE>
 ```
 
-本仓库提供了 Jetson 本地 setup 脚本和架构无关的安全网关。使用 `scripts/deploy_phase12_gateway.sh` 从 WSL 部署这些产物：
+本仓库提供 Jetson 本地 setup 脚本和独立 Driver 源码包，使用以下命令从 WSL 复制：
 
 ```bash
-WEAKNET_JETSON_HOST=<ROBOT_SSH_USER>@<ROBOT_IP> scripts/deploy_phase12_gateway.sh
+WEAKNET_JETSON_HOST=<ROBOT_SSH_USER>@<ROBOT_IP> scripts/deploy_phase12_jetson.sh
 ```
 
-SSH 进入 Jetson 后直接执行脚本。脚本会加载 Jetson 用户的厂商环境（或 `WEAKNET_ROBOT_ENV_FILE` 指定的环境文件），再设置 ROS/Fast DDS 变量。`up` 启动 driver、安全网关（默认 disarmed）和 Discovery Server，不启动厂商的手柄 bringup；如果检测到同名 driver 已经使用了不同的环境，脚本会报错并拒绝启动第二个 driver。这样可以避免重复 `/driver_node`。`down` 会先 disarm 网关，再停止网关、driver 和 Discovery Server。整个流程不会发布非零控制消息：
+随后在 Jetson 从源码编译 `jetson_base_driver`。脚本默认加载系统 ROS、厂商 underlay 与仓库 overlay，设置 ROS/Fast DDS 变量。`up` 启动 Driver 和 Discovery Server；`down` 停止它们。已有 Driver 的 package 或环境不一致时拒绝启动第二个 Driver。当前厂商 Driver 的配置覆盖和完整步骤见 [Phase 12 操作与验收](phase12_jetson.md)。
 
 ```bash
 ssh <ROBOT_SSH_USER>@<ROBOT_IP>
-chmod +x ~/weaknet_phase12_setup.sh
-source ~/weaknet_phase12_setup.sh up
-source ~/weaknet_phase12_setup.sh check
+source ~/ros2exp_ws/scripts/setup_phase12_jetson_local.sh check
+# 启动仓库 Driver 前，先停止已有 Driver
+source ~/ros2exp_ws/scripts/setup_phase12_jetson_local.sh up
 ```
 
 脚本支持 `source` 的原因是需要把 ROS/Fast DDS 变量留在当前终端；脚本不会在这种调用方式下启用 `errexit`/`pipefail`，因此 `check` 阶段的 `Unknown topic` 或网络诊断非零不会关闭 SSH。`check` 会为 CLI 使用单独的 `SUPER_CLIENT` profile，并停止旧 ROS daemon；否则 Discovery Server 的普通 `CLIENT` 只会收到与本地 endpoint 相关的发现信息，`ros2 topic list` 可能看不到远端 topic。更新 Jetson 环境配置后，再执行 `up`，确保已有 driver 不会继续使用旧的 DDS profile。
@@ -413,12 +413,12 @@ ROS_DOMAIN_ID / RMW / ROS_DISCOVERY_SERVER / FASTDDS_BUILTIN_TRANSPORTS
 
 ### 10.9 本项目 Phase 12 配置与验证边界
 
-本项目的 Phase 12 流程使用 ROS domain 61、`rmw_fastrtps_cpp`、TCP Discovery Server（默认端口 42100）和每个参与者独立分配的动态 TCP 数据端口。Jetson 上的 Python 安全网关默认 disarmed，将 WSL 的 `/cmd_vel_remote` 限幅后转到 `/cmd_vel`，命令超时会输出零速度并锁存 disarmed，需显式重新 arm。部署时仍应以本机脚本参数和实际环境为准。
+Phase 12 使用 ROS domain 61、`rmw_fastrtps_cpp`、TCP Discovery Server（默认端口 42100）和每个参与者独立分配的动态 TCP 数据端口。控制 publisher 直接向 `/cmd_vel` 发送全零 `Twist`，Jetson Driver 订阅该话题。独立 Gateway 已移除。
 
-**流程仅作参考**：其他 Jetson 型号、JetPack/ROS 版本、厂商 workspace、网络与防火墙策略可能不同。网关默认失能，软件限幅 x/y 各 0.25 m/s、z 角速度 0.5 rad/s，默认输入超时 0.75 秒后输出零速度；这不是硬件急停，ROS domain 内其他节点仍能调用 arm service。不要在完成现场安全评估前 arm 或发送非零实车命令。`matched_subscribers=1` 仅表示 endpoint 匹配，验证实际数据请在 Jetson 运行：
+达成标准为 WSL–Jetson 小车正常零速通信。`matched_subscribers=1` 仅表示 endpoint 匹配，实际零速接收请在 Jetson 执行：
 
 ```bash
-source ~/weaknet_phase12_setup.sh verify
+source ~/ros2exp_ws/scripts/setup_phase12_jetson_local.sh verify
 ```
 
-`verify` 只接收 `/cmd_vel` 消息，不会发布控制命令。排障时优先使用只读 echo 或官方 talker/listener，不要用未经确认的控制消息作为网络测试。
+`verify` 在 15 秒内等待六个分量全部为零的 `/cmd_vel` 消息，不发布控制命令。当前导入 Driver 未实现 ROS 命令超时保护，回调未应用已声明的速度限幅；这些机制和非零运动不属于本阶段要求。源码、编译、依赖及验收标准见 [phase12_jetson.md](phase12_jetson.md)。

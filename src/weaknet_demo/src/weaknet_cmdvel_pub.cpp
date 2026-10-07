@@ -18,7 +18,7 @@ public:
     linear_x_ = declare_parameter<double>("linear_x", 0.0);
     linear_y_ = declare_parameter<double>("linear_y", 0.0);
     angular_z_ = declare_parameter<double>("angular_z", 0.0);
-    topic_ = declare_parameter<std::string>("topic", "/cmd_vel_remote");
+    topic_ = declare_parameter<std::string>("topic", "/cmd_vel");
 
     if (!(rate_hz_ > 0.0) || !std::isfinite(rate_hz_)) {
       throw std::invalid_argument("rate_hz must be a finite positive number");
@@ -63,7 +63,7 @@ private:
   double linear_x_{0.0};
   double linear_y_{0.0};
   double angular_z_{0.0};
-  std::string topic_{"/cmd_vel_remote"};
+  std::string topic_{"/cmd_vel"};
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
